@@ -45,6 +45,12 @@ npx ai-session-cleanup --safe-run
 # clean only Claude Code and Codex sessions older than 30 days
 npx ai-session-cleanup --agent claude-code,codex --older-than-days 30
 
+# only match candidates with at least 1 MB of measurable reclaimable size
+npx ai-session-cleanup --safe-run --larger-than 1MB
+
+# ignore any project whose name or path contains "foo-bar"
+npx ai-session-cleanup --safe-run --ignore-project foo-bar
+
 # compact Codex SQLite databases after cleanup
 npx ai-session-cleanup --agent codex --compact-sqlite --yes
 
@@ -92,6 +98,8 @@ The CLI focuses on cleanup that is both useful and safe to preview:
 - `--older-than-days` defaults to `45`.
 - Omitting `--agent` scans all supported tools: `claude-code`, `codex`, `copilot`, and `gemini`.
 - `--agent` is the primary public flag. `--provider` is still supported as a compatibility alias.
+- `--ignore-project` ignores matching project names or paths with a case-insensitive substring match. Repeat it to ignore multiple projects.
+- `--larger-than` filters candidates by measurable reclaimable size, using values like `500KB`, `1MB`, or `2GiB`.
 - `--compact-sqlite` is an opt-in apply-mode feature for Codex. It runs `VACUUM` after cleanup to reclaim SQLite file space.
 - `--safe-run` is the recommended preview mode. `--dry-run` is still supported as an alias.
 - Orphaned project detection is enabled by default. Use `--no-orphaned` if you only want age-based cleanup.
@@ -111,6 +119,7 @@ The CLI focuses on cleanup that is both useful and safe to preview:
 - Claude orphaned-project cleanup also removes matching entries from `~/.claude.json`.
 - Claude per-session debug logs in `~/.claude/debug/<session-id>.txt` are cleaned with the matching session.
 - Codex cleanup uses `libsql` so local SQLite access still works on Node 18. It removes database rows, shell snapshots, and history entries. SQLite file sizes may not shrink immediately without a later `VACUUM`.
+- Size filtering only applies to measurable reclaimable bytes. Metadata-only items and candidates whose reclaimable size cannot be estimated remain `0 B` and will not match a positive `--larger-than` threshold.
 - Copilot metadata cleanup uses the platform-specific VS Code `globalStorage/github.copilot-chat` directory instead of assuming a macOS-only path.
 - Copilot cleanup intentionally avoids deleting VS Code `workspaceStorage`, because that data is shared with other extensions.
 - Gemini project roots are recovered from both `~/.gemini/tmp/*/.project_root` and `~/.gemini/history/*/.project_root`, then matched to hashed temp directories.

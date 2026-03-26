@@ -12,6 +12,8 @@ import {
   excerpt,
   expandHome,
   getPathSize,
+  matchesIgnoredProject,
+  matchesSizeThreshold,
   parseDate,
   pathExists,
   readJsonFile,
@@ -181,16 +183,37 @@ export const claudeCodeProvider: AgentProvider<
       const entries = index.entries ?? [];
       const projectPath =
         entries.find((entry) => entry.projectPath)?.projectPath ?? null;
+      const projectName = projectPath
+        ? basename(projectPath)
+        : basename(projectDir);
+
+      if (
+        matchesIgnoredProject(
+          projectPath,
+          projectName,
+          options.ignoredProjectTerms,
+        )
+      ) {
+        continue;
+      }
+
       const projectMissing =
         options.includeOrphaned && projectPath
           ? !(await pathExists(projectPath))
           : false;
 
       if (!entries.length) {
+        const bytes = await getPathSize(projectDir);
         const updatedAt =
           (await safeStat(indexPath)) ?? (await safeStat(projectDir));
+
+        if (!matchesSizeThreshold(bytes, options.largerThanBytes)) {
+          continue;
+        }
+
         projects.push({
-          bytes: await getPathSize(projectDir),
+          bytes,
+          createdAt: null,
           displayName: basename(projectDir),
           internal: {
             configProjectPath: null,
@@ -237,6 +260,10 @@ export const claudeCodeProvider: AgentProvider<
         const todoFiles = todoFilesBySession.get(sessionId) ?? [];
         const bytes = await sumPathSizes([...relatedPaths, ...todoFiles]);
 
+        if (!matchesSizeThreshold(bytes, options.largerThanBytes)) {
+          continue;
+        }
+
         sessions.push({
           bytes,
           createdAt: parseDate(entry.created),
@@ -249,9 +276,7 @@ export const claudeCodeProvider: AgentProvider<
             sessionId,
             todoFiles,
           },
-          projectName: projectPath
-            ? basename(projectPath)
-            : basename(projectDir),
+          projectName,
           projectPath,
           providerId: "claude-code",
           providerName: "Claude Code",
@@ -367,8 +392,23 @@ async function scanClaudeGlobalProjects(
       continue;
     }
 
+    if (
+      matchesIgnoredProject(
+        projectPath,
+        basename(projectPath),
+        options.ignoredProjectTerms,
+      )
+    ) {
+      continue;
+    }
+
+    if (!matchesSizeThreshold(0, options.largerThanBytes)) {
+      continue;
+    }
+
     projects.push({
       bytes: 0,
+      createdAt: null,
       displayName: basename(projectPath),
       internal: {
         configProjectPath: projectPath,

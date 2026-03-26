@@ -11,7 +11,13 @@ import type {
   ProviderScanResult,
   SessionCandidate,
 } from "./types.js";
-import { confirm, formatBytes, formatDate, parseArgs } from "./utils.js";
+import {
+  abbreviateHomePath,
+  confirm,
+  formatBytes,
+  formatDateTime,
+  parseArgs,
+} from "./utils.js";
 
 void main();
 
@@ -233,6 +239,14 @@ function printScanReport(
       options.providerIds?.join(", ") ?? "all"
     } | Older than days: ${options.olderThanDays ?? "-"} | Orphaned: ${
       options.includeOrphaned ? "yes" : "no"
+    } | Ignore project: ${
+      options.ignoredProjectTerms.length
+        ? clip(options.ignoredProjectTerms.join(", "), 30)
+        : "-"
+    } | Larger than: ${
+      options.largerThanBytes === null
+        ? "-"
+        : formatBytes(options.largerThanBytes)
     } | Compact SQLite: ${options.compactSqlite ? "yes" : "no"}\n`,
   );
   process.stdout.write(
@@ -264,7 +278,16 @@ function printScanReport(
     process.stdout.write("\nCandidates:\n");
     process.stdout.write(
       `${renderTable(
-        ["Agent", "Type", "Updated", "Size", "Reasons", "Project", "Label"],
+        [
+          "Agent",
+          "Type",
+          "Last use",
+          "Size",
+          "Reasons",
+          "Project",
+          "Session id",
+          "Label",
+        ],
         candidateRows,
       )}\n`,
     );
@@ -296,10 +319,11 @@ function projectCandidateToRow(project: ProjectCandidate): string[] {
   return [
     project.providerName,
     "project",
-    formatDate(project.updatedAt),
+    formatDateTime(project.updatedAt),
     formatBytes(project.bytes),
     clip(project.reasons.join(", "), 30),
-    clip(project.projectPath ?? "-", 36),
+    clip(abbreviateHomePath(project.projectPath) ?? "-", 36),
+    "-",
     clip(project.displayName, 42),
   ];
 }
@@ -357,10 +381,11 @@ function sessionCandidateToRow(session: SessionCandidate): string[] {
   return [
     session.providerName,
     "session",
-    formatDate(session.updatedAt),
+    formatDateTime(session.updatedAt),
     formatBytes(session.bytes),
     clip(session.reasons.join(", "), 30),
-    clip(session.projectPath ?? "-", 36),
+    clip(abbreviateHomePath(session.projectPath) ?? "-", 36),
+    session.id,
     clip(session.title ?? session.id, 42),
   ];
 }
@@ -374,10 +399,11 @@ function summarizeExecution(
     notes: result.notes,
     projects: result.projects.map((project) => ({
       bytes: project.bytes,
+      createdAt: project.createdAt?.toISOString() ?? null,
       displayName: project.displayName,
+      lastUsedAt: project.updatedAt?.toISOString() ?? null,
       projectPath: project.projectPath,
       reasons: project.reasons,
-      updatedAt: project.updatedAt?.toISOString() ?? null,
     })),
     providerId: result.providerId,
     providerName: result.providerName,
@@ -386,10 +412,10 @@ function summarizeExecution(
       createdAt: session.createdAt?.toISOString() ?? null,
       current: session.current,
       id: session.id,
+      lastUsedAt: session.updatedAt.toISOString(),
       projectPath: session.projectPath,
       reasons: session.reasons,
       title: session.title,
-      updatedAt: session.updatedAt.toISOString(),
     })),
     warnings: result.warnings,
   };
@@ -400,7 +426,9 @@ function summarizeOptions(options: CliOptions): Record<string, unknown> {
     agentIds: options.providerIds,
     compactSqlite: options.compactSqlite,
     dryRun: options.dryRun,
+    ignoredProjectTerms: options.ignoredProjectTerms,
     includeOrphaned: options.includeOrphaned,
+    largerThanBytes: options.largerThanBytes,
     mode: options.dryRun ? "safe-run" : "apply",
     olderThanDays: options.olderThanDays,
     providerIds: options.providerIds,

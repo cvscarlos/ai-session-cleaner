@@ -13,6 +13,8 @@ import {
   excerpt,
   expandHome,
   getPathSize,
+  matchesIgnoredProject,
+  matchesSizeThreshold,
   parseDate,
   pathExists,
   readJsonFile,
@@ -207,6 +209,20 @@ export const geminiProvider: AgentProvider<
         projectHashToRoot,
       );
       const updatedAt = session.updatedAt ?? new Date(0);
+      const projectName = session.projectPath
+        ? basename(session.projectPath)
+        : null;
+
+      if (
+        matchesIgnoredProject(
+          session.projectPath,
+          projectName,
+          options.ignoredProjectTerms,
+        )
+      ) {
+        continue;
+      }
+
       const projectMissing =
         options.includeOrphaned && session.projectPath
           ? !(await pathExists(session.projectPath))
@@ -214,6 +230,10 @@ export const geminiProvider: AgentProvider<
       const reasons = collectReasons(updatedAt, cutoffDate, projectMissing);
 
       if (!reasons.length) {
+        continue;
+      }
+
+      if (!matchesSizeThreshold(session.bytes, options.largerThanBytes)) {
         continue;
       }
 
@@ -229,7 +249,7 @@ export const geminiProvider: AgentProvider<
           toolOutputDirs: Array.from(session.toolOutputDirs),
           topLevelDirs: Array.from(session.topLevelDirs),
         },
-        projectName: session.projectPath ? basename(session.projectPath) : null,
+        projectName,
         projectPath: session.projectPath,
         providerId: "gemini",
         providerName: "Gemini",
@@ -582,8 +602,25 @@ async function scanGeminiProjectContainers(
       continue;
     }
 
+    if (
+      matchesIgnoredProject(
+        projectPath || null,
+        entry.name,
+        options.ignoredProjectTerms,
+      )
+    ) {
+      continue;
+    }
+
+    const bytes = await getPathSize(projectDir);
+
+    if (!matchesSizeThreshold(bytes, options.largerThanBytes)) {
+      continue;
+    }
+
     projects.push({
-      bytes: await getPathSize(projectDir),
+      bytes,
+      createdAt: null,
       displayName: entry.name,
       internal: {
         configProjectPath: null,
@@ -654,8 +691,23 @@ async function scanGeminiProjectsFile(
       continue;
     }
 
+    if (
+      matchesIgnoredProject(
+        projectPath,
+        projectName || basename(projectPath),
+        options.ignoredProjectTerms,
+      )
+    ) {
+      continue;
+    }
+
+    if (!matchesSizeThreshold(0, options.largerThanBytes)) {
+      continue;
+    }
+
     projects.push({
       bytes: 0,
+      createdAt: null,
       displayName: projectName || basename(projectPath),
       internal: {
         configProjectPath: projectPath,

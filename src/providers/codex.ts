@@ -14,6 +14,8 @@ import {
   expandHome,
   formatBytes,
   getPathSize,
+  matchesIgnoredProject,
+  matchesSizeThreshold,
   parseDate,
   pathExists,
   removePath,
@@ -217,6 +219,18 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
       }
 
       const updatedAt = parseDate(row.updated_at) ?? new Date(0);
+      const projectName = row.cwd ? basename(row.cwd) : null;
+
+      if (
+        matchesIgnoredProject(
+          row.cwd || null,
+          projectName,
+          options.ignoredProjectTerms,
+        )
+      ) {
+        continue;
+      }
+
       const projectMissing =
         options.includeOrphaned && row.cwd
           ? !(await pathExists(row.cwd))
@@ -230,9 +244,14 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
       const shellSnapshotPaths = shellSnapshotsByThread.get(row.id) ?? [];
       const shellSnapshotBytes = await sumPathSizes(shellSnapshotPaths);
       const historyBytes = historyBytesByThread.get(row.id) ?? 0;
+      const bytes = shellSnapshotBytes + historyBytes;
+
+      if (!matchesSizeThreshold(bytes, options.largerThanBytes)) {
+        continue;
+      }
 
       sessions.push({
-        bytes: shellSnapshotBytes + historyBytes,
+        bytes,
         createdAt: parseDate(row.created_at),
         current: false,
         id: row.id,
@@ -243,7 +262,7 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
           stateDbPath,
           threadId: row.id,
         },
-        projectName: row.cwd ? basename(row.cwd) : null,
+        projectName,
         projectPath: row.cwd || null,
         providerId: "codex",
         providerName: "Codex",

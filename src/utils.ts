@@ -9,7 +9,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir, platform } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import type { CliOptions, ProviderId } from "./types.js";
@@ -59,6 +59,32 @@ export function getVsCodeGlobalStorageDirectory(
   );
 }
 
+export function abbreviateHomePath(
+  path: string | null | undefined,
+): string | null {
+  if (!path) {
+    return null;
+  }
+
+  const homePath = homedir();
+
+  if (path === homePath) {
+    return "~";
+  }
+
+  const relativePath = relative(homePath, path);
+
+  if (
+    !relativePath ||
+    relativePath.startsWith("..") ||
+    isAbsolute(relativePath)
+  ) {
+    return path;
+  }
+
+  return `~${sep}${relativePath}`;
+}
+
 export function excerpt(
   value: string | null | undefined,
   length = 72,
@@ -76,12 +102,18 @@ export function excerpt(
   return `${normalized.slice(0, Math.max(0, length - 3)).trim()}...`;
 }
 
-export function formatDate(value: Date | null): string {
+export function formatDateTime(value: Date | null): string {
   if (!value) {
     return "-";
   }
 
-  return value.toISOString().slice(0, 10);
+  const year = String(value.getFullYear());
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  const hours = String(value.getHours()).padStart(2, "0");
+  const minutes = String(value.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
 
 export function formatBytes(bytes: number): string {
@@ -101,6 +133,47 @@ export function formatBytes(bytes: number): string {
   const fixed = size >= 10 || unitIndex === 0 ? 0 : 1;
 
   return `${size.toFixed(fixed)} ${units[unitIndex]}`;
+}
+
+export function matchesSizeThreshold(
+  bytes: number,
+  largerThanBytes: number | null,
+): boolean {
+  if (largerThanBytes === null) {
+    return true;
+  }
+
+  return bytes >= largerThanBytes;
+}
+
+export function matchesIgnoredProject(
+  projectPath: string | null,
+  projectName: string | null,
+  ignoredProjectTerms: string[],
+): boolean {
+  if (!ignoredProjectTerms.length) {
+    return false;
+  }
+
+  const haystacks = new Set<string>();
+
+  if (projectName) {
+    haystacks.add(normalizeProjectMatchValue(projectName));
+  }
+
+  if (projectPath) {
+    haystacks.add(normalizeProjectMatchValue(projectPath));
+    haystacks.add(normalizeProjectMatchValue(abbreviateHomePath(projectPath)));
+    haystacks.add(normalizeProjectMatchValue(basename(projectPath)));
+  }
+
+  if (!haystacks.size) {
+    return false;
+  }
+
+  return ignoredProjectTerms.some((term) =>
+    Array.from(haystacks).some((value) => value.includes(term)),
+  );
 }
 
 export async function getPathSize(path: string): Promise<number> {
@@ -217,8 +290,10 @@ export function parseAgentIds(
 export function parseArgs(argv: string[]): CliOptions {
   let compactSqlite = false;
   let dryRun = false;
+  const ignoredProjectTerms: string[] = [];
   let includeOrphaned = true;
   let json = false;
+  let largerThanBytes: number | null = null;
   let olderThanDays = 45;
   let providerIds: ProviderId[] | null = null;
   let yes = false;
@@ -251,6 +326,40 @@ export function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--compact-sqlite") {
       compactSqlite = true;
+      continue;
+    }
+
+    if (arg.startsWith("--ignore-project=")) {
+      ignoredProjectTerms.push(
+        ...parseIgnoreProjectTerms(
+          arg.split("=", 2)[1] ?? "",
+          "--ignore-project",
+        ),
+      );
+      continue;
+    }
+
+    if (arg === "--ignore-project") {
+      const nextValue = argv[index + 1];
+      ignoredProjectTerms.push(
+        ...parseIgnoreProjectTerms(nextValue ?? "", "--ignore-project"),
+      );
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith("--larger-than=")) {
+      largerThanBytes = parseSizeThreshold(
+        arg.split("=", 2)[1] ?? "",
+        "--larger-than",
+      );
+      continue;
+    }
+
+    if (arg === "--larger-than") {
+      const nextValue = argv[index + 1];
+      largerThanBytes = parseSizeThreshold(nextValue ?? "", "--larger-than");
+      index += 1;
       continue;
     }
 
@@ -307,8 +416,10 @@ export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     compactSqlite,
     dryRun,
+    ignoredProjectTerms: Array.from(new Set(ignoredProjectTerms)),
     includeOrphaned,
     json,
+    largerThanBytes,
     now: new Date(),
     olderThanDays,
     providerIds,
@@ -332,6 +443,60 @@ function parsePositiveInteger(value: string, flag: string): number {
   return parsedValue;
 }
 
+function parseIgnoreProjectTerms(value: string, flag: string): string[] {
+  const terms = value
+    .split(",")
+    .map((entry) => normalizeProjectMatchValue(entry))
+    .filter(Boolean);
+
+  if (!terms.length) {
+    throw new Error(`Expected at least one project search term after ${flag}`);
+  }
+
+  return terms;
+}
+
+function parseSizeThreshold(value: string, flag: string): number {
+  const normalized = value.trim();
+  const match = /^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb|tb|kib|mib|gib|tib)?$/iu.exec(
+    normalized,
+  );
+
+  if (!match?.[1]) {
+    throw new Error(`${flag} expects a size like 1048576, 500KB, 1MB, or 2GiB`);
+  }
+
+  const amount = Number(match[1]);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(`${flag} expects a positive size`);
+  }
+
+  const unit = (match[2] ?? "b").toLowerCase();
+  const multipliers: Record<string, number> = {
+    b: 1,
+    gb: 1024 ** 3,
+    gib: 1024 ** 3,
+    kb: 1024,
+    kib: 1024,
+    mb: 1024 ** 2,
+    mib: 1024 ** 2,
+    tb: 1024 ** 4,
+    tib: 1024 ** 4,
+  };
+  const multiplier = multipliers[unit];
+
+  if (!multiplier) {
+    throw new Error(`${flag} expects a size like 1048576, 500KB, 1MB, or 2GiB`);
+  }
+
+  return Math.ceil(amount * multiplier);
+}
+
+function normalizeProjectMatchValue(value: string | null | undefined): string {
+  return value?.trim().toLowerCase().replaceAll("\\", "/") ?? "";
+}
+
 export function printHelpAndExit(): never {
   process.stdout.write(
     [
@@ -346,6 +511,8 @@ export function printHelpAndExit(): never {
       "  --older-than-days <days>  Delete sessions older than this many days (default: 45)",
       `  -a, --agent <ids>         Comma-separated agent ids: ${AGENT_IDS.join(", ")} (default: all)`,
       "  --provider <ids>          Alias for --agent",
+      "  --ignore-project <term>   Ignore matching project names or paths (repeatable, substring match)",
+      "  --larger-than <size>      Only match items at or above this measurable size (for example: 1MB)",
       "  --compact-sqlite          Run VACUUM on cleaned Codex SQLite databases after apply",
       "  --safe-run                Preview everything that would be deleted",
       "  --dry-run                 Alias for --safe-run",

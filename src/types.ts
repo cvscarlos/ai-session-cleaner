@@ -3,8 +3,10 @@ export type ProviderId = "claude-code" | "codex" | "copilot" | "gemini";
 export interface CliOptions {
   compactSqlite: boolean;
   dryRun: boolean;
+  ignoredProjectTerms: string[];
   includeOrphaned: boolean;
   json: boolean;
+  largerThanBytes: number | null;
   now: Date;
   olderThanDays: number | null;
   providerIds: ProviderId[] | null;
@@ -28,6 +30,7 @@ export interface SessionCandidate<TInternal = unknown> {
 
 export interface ProjectCandidate<TInternal = unknown> {
   bytes: number;
+  createdAt: Date | null;
   displayName: string;
   internal: TInternal;
   key: string;

@@ -12,6 +12,8 @@ import {
   expandHome,
   getPathSize,
   getVsCodeGlobalStorageDirectory,
+  matchesIgnoredProject,
+  matchesSizeThreshold,
   parseDate,
   parseFlatYaml,
   pathExists,
@@ -137,6 +139,20 @@ export const copilotProvider: AgentProvider<CopilotSessionInternal> = {
 
     for (const session of sessionsById.values()) {
       const updatedAt = session.updatedAt ?? new Date(0);
+      const projectName = session.projectPath
+        ? basename(session.projectPath)
+        : null;
+
+      if (
+        matchesIgnoredProject(
+          session.projectPath,
+          projectName,
+          options.ignoredProjectTerms,
+        )
+      ) {
+        continue;
+      }
+
       const projectMissing =
         options.includeOrphaned && session.projectPath
           ? !(await pathExists(session.projectPath))
@@ -144,6 +160,10 @@ export const copilotProvider: AgentProvider<CopilotSessionInternal> = {
       const reasons = collectReasons(updatedAt, cutoffDate, projectMissing);
 
       if (!reasons.length) {
+        continue;
+      }
+
+      if (!matchesSizeThreshold(session.bytes, options.largerThanBytes)) {
         continue;
       }
 
@@ -158,7 +178,7 @@ export const copilotProvider: AgentProvider<CopilotSessionInternal> = {
           rootJsonlPath: session.rootJsonlPath,
           sessionId: session.id,
         },
-        projectName: session.projectPath ? basename(session.projectPath) : null,
+        projectName,
         projectPath: session.projectPath,
         providerId: "copilot",
         providerName: "Copilot",
