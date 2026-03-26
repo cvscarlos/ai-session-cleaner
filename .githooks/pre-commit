@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if git diff --cached --quiet --exit-code; then
+  exit 0
+fi
+
+npm exec -- biome check --write --staged
+git update-index --again

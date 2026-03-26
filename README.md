@@ -1,0 +1,118 @@
+# ai-session-cleanup
+
+Keep local AI agent session data tidy across the CLIs you already use.
+
+`ai-session-cleanup` is a terminal-first cleanup tool for multi-agent developers. It scans agent-specific session stores, shows exactly what would be removed, and lets you apply the same cleanup from one command.
+
+Built for:
+
+- [Claude Code](https://github.com/anthropics/claude-code)
+- [Codex](https://github.com/openai/codex)
+- [GitHub Copilot CLI](https://github.com/github/copilot-cli)
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+
+Requires Node 18 or newer.
+
+## Why use it
+
+- One cleanup command across multiple AI coding CLIs
+- Safe preview mode with `--safe-run`
+- Sensible defaults: `45` days and all supported agents
+- Human-readable tables for manual runs and `--json` for automation
+- Agent-aware cleanup instead of generic file deletion
+
+## Quick start
+
+Run instantly with `npx`:
+
+```bash
+# preview everything older than 45 days across all supported tools
+npx ai-session-cleanup --safe-run
+
+# apply interactively
+npx ai-session-cleanup
+
+# apply without prompts
+npx ai-session-cleanup --yes
+```
+
+## Examples
+
+```bash
+# preview everything with the default settings
+npx ai-session-cleanup --safe-run
+
+# clean only Claude Code and Codex sessions older than 30 days
+npx ai-session-cleanup --agent claude-code,codex --older-than-days 30
+
+# compact Codex SQLite databases after cleanup
+npx ai-session-cleanup --agent codex --compact-sqlite --yes
+
+# machine-readable output for scripts
+npx ai-session-cleanup --safe-run --json
+
+# disable orphaned project detection and only use age-based cleanup
+npx ai-session-cleanup --safe-run --no-orphaned
+```
+
+## Local development
+
+If you are working from this repository:
+
+```bash
+npm install
+npm run build
+npm run start -- --safe-run
+```
+
+Or run directly with `tsx`:
+
+```bash
+npm run dev -- --safe-run
+```
+
+## What it cleans
+
+The CLI focuses on cleanup that is both useful and safe to preview:
+
+- sessions older than the configured age threshold
+- orphaned session or project metadata whose original project root no longer exists
+
+## Supported tools
+
+| Tool | Agent id | Coverage |
+| --- | --- | --- |
+| Claude Code | `claude-code` | `~/.claude/projects`, `~/.claude/session-env`, `~/.claude/tasks`, `~/.claude/file-history`, `~/.claude/todos`, `~/.claude/debug`, `~/.claude.json` |
+| Codex | `codex` | `~/.codex/state_*.sqlite`, `~/.codex/logs_*.sqlite`, `~/.codex/history.jsonl`, `~/.codex/shell_snapshots` |
+| GitHub Copilot CLI | `copilot` | `~/.copilot/session-state`, `~/.copilot/logs/session-*`, platform-specific VS Code globalStorage metadata |
+| Gemini CLI | `gemini` | `~/.gemini/tmp`, `~/.gemini/history`, `~/.gemini/projects.json` |
+
+## Behavior
+
+- `--older-than-days` defaults to `45`.
+- Omitting `--agent` scans all supported tools: `claude-code`, `codex`, `copilot`, and `gemini`.
+- `--agent` is the primary public flag. `--provider` is still supported as a compatibility alias.
+- `--compact-sqlite` is an opt-in apply-mode feature for Codex. It runs `VACUUM` after cleanup to reclaim SQLite file space.
+- `--safe-run` is the recommended preview mode. `--dry-run` is still supported as an alias.
+- Orphaned project detection is enabled by default. Use `--no-orphaned` if you only want age-based cleanup.
+
+## Tooling
+
+- `npm run format` formats the repository with Biome.
+- `npm run lint` runs Biome checks.
+- `npm run typecheck` runs TypeScript type checking.
+- `npm run clean` uses Node's built-in filesystem APIs and works across macOS, Linux, and Windows.
+- `npm install` configures local git hooks for contributors in this repo.
+- `pre-commit` formats and checks staged files with Biome.
+- `pre-push` runs `npm run typecheck` and `npm run build`.
+
+## Notes
+
+- Claude orphaned-project cleanup also removes matching entries from `~/.claude.json`.
+- Claude per-session debug logs in `~/.claude/debug/<session-id>.txt` are cleaned with the matching session.
+- Codex cleanup uses `libsql` so local SQLite access still works on Node 18. It removes database rows, shell snapshots, and history entries. SQLite file sizes may not shrink immediately without a later `VACUUM`.
+- Copilot metadata cleanup uses the platform-specific VS Code `globalStorage/github.copilot-chat` directory instead of assuming a macOS-only path.
+- Copilot cleanup intentionally avoids deleting VS Code `workspaceStorage`, because that data is shared with other extensions.
+- Gemini project roots are recovered from both `~/.gemini/tmp/*/.project_root` and `~/.gemini/history/*/.project_root`, then matched to hashed temp directories.
+- Gemini orphaned-project cleanup also removes matching entries from `~/.gemini/projects.json`.
+- Some provider-owned files are intentionally skipped when they cannot be mapped safely to a previewable session or project candidate.

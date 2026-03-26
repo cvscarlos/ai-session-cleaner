@@ -1,0 +1,35 @@
+{
+  "name": "ai-session-cleanup",
+  "version": "0.1.0",
+  "description": "Inspect and clean local AI coding agent session data",
+  "type": "module",
+  "bin": {
+    "ai-session-cleanup": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{force:true,recursive:true})\"",
+    "dev": "tsx src/index.ts",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "prepare": "node scripts/setup-git-hooks.mjs",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "libsql": "^0.5.29"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.9",
+    "@types/node": "^18.19.100",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3"
+  }
+}
