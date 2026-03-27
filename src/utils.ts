@@ -12,6 +12,7 @@ import { homedir, platform } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
+import { createOutputTheme } from "./output-theme.js";
 import type { CliOptions, ProviderId } from "./types.js";
 
 const AGENT_IDS: ProviderId[] = [
@@ -294,6 +295,7 @@ export function parseAgentIds(
 }
 
 export function parseArgs(argv: string[]): CliOptions {
+  const color = !argv.includes("--no-color");
   let compactSqlite = false;
   let dryRun = false;
   const ignoredProjectTerms: string[] = [];
@@ -312,7 +314,7 @@ export function parseArgs(argv: string[]): CliOptions {
     }
 
     if (arg === "--help" || arg === "-h") {
-      printHelpAndExit();
+      printHelpAndExit(color);
     }
 
     if (arg === "--dry-run" || arg === "--safe-run") {
@@ -322,6 +324,10 @@ export function parseArgs(argv: string[]): CliOptions {
 
     if (arg === "--yes") {
       yes = true;
+      continue;
+    }
+
+    if (arg === "--no-color") {
       continue;
     }
 
@@ -420,6 +426,7 @@ export function parseArgs(argv: string[]): CliOptions {
   }
 
   const options: CliOptions = {
+    color,
     compactSqlite,
     dryRun,
     ignoredProjectTerms: Array.from(new Set(ignoredProjectTerms)),
@@ -503,36 +510,81 @@ function normalizeProjectMatchValue(value: string | null | undefined): string {
   return value?.trim().toLowerCase().replaceAll("\\", "/") ?? "";
 }
 
-export function printHelpAndExit(): never {
+export function printHelpAndExit(color = true): never {
+  const theme = createOutputTheme(color);
+
   process.stdout.write(
     [
-      "ai-session-cleaner",
+      theme.title("ai-session-cleaner"),
       "",
       "Inspect and clean local AI agent session data.",
       "",
-      "Usage:",
-      "  ai-session-cleaner [--older-than-days 45] [--agent claude-code,codex] [--safe-run]",
+      theme.heading("Usage:"),
+      `  ${theme.strong(
+        "ai-session-cleaner [--older-than-days 45] [--agent claude-code,codex] [--safe-run]",
+      )}`,
       "",
-      "Options:",
-      "  --older-than-days <days>  Delete sessions older than this many days (default: 45)",
-      `  -a, --agent <ids>         Comma-separated agent ids: ${AGENT_IDS.join(", ")} (default: all)`,
-      "  --provider <ids>          Alias for --agent",
-      "  --ignore-project <term>   Ignore matching project names or paths (repeatable, substring match)",
-      "  --larger-than <size>      Only match items at or above this measurable size (for example: 1MB)",
-      "  --compact-sqlite          Run VACUUM on cleaned Codex SQLite databases after apply",
-      "  --safe-run                Preview everything that would be deleted",
-      "  --dry-run                 Alias for --safe-run",
-      "  --yes                     Skip interactive confirmation",
-      "  --json                    Print machine-readable JSON",
-      "  --no-orphaned             Skip orphaned-project detection",
-      "  --help, -h                Show this help",
+      theme.heading("Options:"),
+      formatHelpOption(
+        theme.accent("--older-than-days <days>").padEnd(30),
+        "Delete sessions older than this many days (default: 45)",
+      ),
+      formatHelpOption(
+        theme.accent("-a, --agent <ids>").padEnd(30),
+        `Comma-separated agent ids: ${AGENT_IDS.join(", ")} (default: all)`,
+      ),
+      formatHelpOption(
+        theme.accent("--provider <ids>").padEnd(30),
+        "Alias for --agent",
+      ),
+      formatHelpOption(
+        theme.accent("--ignore-project <term>").padEnd(30),
+        "Ignore matching project names or paths (repeatable, substring match)",
+      ),
+      formatHelpOption(
+        theme.accent("--larger-than <size>").padEnd(30),
+        "Only match items at or above this measurable size (for example: 1MB)",
+      ),
+      formatHelpOption(
+        theme.accent("--compact-sqlite").padEnd(30),
+        "Run VACUUM on cleaned Codex SQLite databases after apply",
+      ),
+      formatHelpOption(
+        theme.accent("--safe-run").padEnd(30),
+        "Preview everything that would be deleted",
+      ),
+      formatHelpOption(
+        theme.accent("--dry-run").padEnd(30),
+        "Alias for --safe-run",
+      ),
+      formatHelpOption(
+        theme.accent("--yes").padEnd(30),
+        "Skip interactive confirmation",
+      ),
+      formatHelpOption(
+        theme.accent("--json").padEnd(30),
+        "Print machine-readable JSON",
+      ),
+      formatHelpOption(
+        theme.accent("--no-color").padEnd(30),
+        "Disable ANSI colors in human-readable output",
+      ),
+      formatHelpOption(
+        theme.accent("--no-orphaned").padEnd(30),
+        "Skip orphaned-project detection",
+      ),
+      formatHelpOption(theme.accent("--help, -h").padEnd(30), "Show this help"),
       "",
-      "Agents:",
-      `  ${AGENT_IDS.join(", ")}`,
+      theme.heading("Agents:"),
+      `  ${theme.strong(AGENT_IDS.join(", "))}`,
       "",
     ].join("\n"),
   );
   process.exit(0);
+}
+
+function formatHelpOption(label: string, description: string): string {
+  return `  ${label} ${description}`;
 }
 
 export async function readJsonFile<T>(path: string): Promise<T> {

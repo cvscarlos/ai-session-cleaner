@@ -17,6 +17,7 @@ Requires Node 18 or newer.
 ## Why use it
 
 - One cleanup command across multiple AI coding CLIs
+- Colorized terminal output by default, with `--no-color` when you want plain text
 - Safe preview mode with `--safe-run`
 - Sensible defaults: `45` days and all supported agents
 - Human-readable tables for manual runs and `--json` for automation
@@ -57,6 +58,9 @@ npx ai-session-cleaner --agent codex --compact-sqlite --yes
 
 # machine-readable output for scripts
 npx ai-session-cleaner --safe-run --json
+
+# disable ANSI colors in human-readable output
+npx ai-session-cleaner --safe-run --no-color
 
 # disable orphaned project detection and only use age-based cleanup
 npx ai-session-cleaner --safe-run --no-orphaned
@@ -103,6 +107,7 @@ The CLI focuses on cleanup that is both useful and safe to preview:
 - `--ignore-project` ignores matching project names or paths with a case-insensitive substring match. Repeat it to ignore multiple projects.
 - `--larger-than` filters candidates by measurable reclaimable size, using values like `500KB`, `1MB`, or `2GiB`.
 - `--compact-sqlite` is an opt-in apply-mode feature for Codex. It runs `VACUUM` after cleanup to reclaim SQLite file space.
+- Human-readable output is colorized by default. Use `--no-color` to disable ANSI colors. JSON output stays uncolored.
 - `--safe-run` is the recommended preview mode. `--dry-run` is still supported as an alias.
 - Orphaned project detection is enabled by default. Use `--no-orphaned` if you only want age-based cleanup.
 

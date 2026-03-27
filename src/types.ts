@@ -6,6 +6,7 @@ export type ProviderId =
   | "opencode";
 
 export interface CliOptions {
+  color: boolean;
   compactSqlite: boolean;
   dryRun: boolean;
   ignoredProjectTerms: string[];

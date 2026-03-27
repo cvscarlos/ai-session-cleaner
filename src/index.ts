@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import process from "node:process";
+import type { OutputTheme } from "./output-theme.js";
+import { createOutputTheme } from "./output-theme.js";
 import { providers } from "./providers/index.js";
 import type {
   AgentProvider,
@@ -8,6 +10,7 @@ import type {
   ProjectCandidate,
   ProviderApplyResult,
   ProviderExecution,
+  ProviderId,
   ProviderScanResult,
   SessionCandidate,
 } from "./types.js";
@@ -24,6 +27,7 @@ void main();
 async function main(): Promise<void> {
   try {
     const options = parseArgs(process.argv.slice(2));
+    const theme = createOutputTheme(options.color);
     const selectedProviders = selectProviders(options);
     const executions = await scanProviders(selectedProviders, options);
     const hasCandidates = executions.some(
@@ -44,7 +48,7 @@ async function main(): Promise<void> {
     }
 
     if (!options.json) {
-      printScanReport(options, executions);
+      printScanReport(options, executions, theme);
     }
 
     if (!hasCandidates || options.dryRun) {
@@ -86,7 +90,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    printApplyReport(applyResults);
+    printApplyReport(applyResults, theme);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     process.stderr.write(`Error: ${message}\n`);
@@ -139,7 +143,12 @@ function clip(value: string, length: number): string {
   return `${value.slice(0, Math.max(0, length - 3)).trim()}...`;
 }
 
-function collectCandidateRows(executions: ProviderExecution[]): string[][] {
+interface TableRow {
+  agentId: ProviderId | null;
+  cells: string[];
+}
+
+function collectCandidateRows(executions: ProviderExecution[]): TableRow[] {
   const sessionRows = executions.flatMap((execution) =>
     execution.result.sessions.map((session) => sessionCandidateToRow(session)),
   );
@@ -148,7 +157,9 @@ function collectCandidateRows(executions: ProviderExecution[]): string[][] {
   );
 
   return [...sessionRows, ...projectRows].sort((left, right) =>
-    `${left[0]}-${left[2]}`.localeCompare(`${right[0]}-${right[2]}`),
+    `${left.cells[0] ?? ""}-${left.cells[2] ?? ""}`.localeCompare(
+      `${right.cells[0] ?? ""}-${right.cells[2] ?? ""}`,
+    ),
   );
 }
 
@@ -165,17 +176,24 @@ function collectMessages(executions: ProviderExecution[]): {
   };
 }
 
-function printApplyReport(applyResults: ProviderApplyResult[]): void {
-  process.stdout.write("\nApplied cleanup:\n");
+function printApplyReport(
+  applyResults: ProviderApplyResult[],
+  theme: OutputTheme,
+): void {
+  process.stdout.write(`\n${theme.success("Applied cleanup:")}\n`);
   process.stdout.write(
     `${renderTable(
       ["Agent", "Sessions", "Projects", "Bytes"],
-      applyResults.map((result) => [
-        result.providerName,
-        String(result.deletedSessions),
-        String(result.deletedProjects),
-        formatBytes(result.deletedBytes),
-      ]),
+      applyResults.map((result) => ({
+        agentId: result.providerId,
+        cells: [
+          result.providerName,
+          String(result.deletedSessions),
+          String(result.deletedProjects),
+          formatBytes(result.deletedBytes),
+        ],
+      })),
+      theme,
     )}\n`,
   );
 
@@ -187,16 +205,16 @@ function printApplyReport(applyResults: ProviderApplyResult[]): void {
   );
 
   if (warnings.length) {
-    process.stdout.write("\nWarnings:\n");
+    process.stdout.write(`\n${theme.warning("Warnings:")}\n`);
     for (const warning of warnings) {
-      process.stdout.write(`- ${warning}\n`);
+      process.stdout.write(`${theme.warning(`- ${warning}`)}\n`);
     }
   }
 
   if (notes.length) {
-    process.stdout.write("\nNotes:\n");
+    process.stdout.write(`\n${theme.heading("Notes:")}\n`);
     for (const note of notes) {
-      process.stdout.write(`- ${note}\n`);
+      process.stdout.write(`${theme.accent(`- ${note}`)}\n`);
     }
   }
 }
@@ -208,6 +226,7 @@ function printJson(value: unknown): void {
 function printScanReport(
   options: CliOptions,
   executions: ProviderExecution[],
+  theme: OutputTheme,
 ): void {
   const totalSessions = executions.reduce(
     (sum, execution) => sum + execution.result.sessions.length,
@@ -233,49 +252,75 @@ function printScanReport(
   const candidateRows = collectCandidateRows(executions);
   const messages = collectMessages(executions);
 
-  process.stdout.write("AI session cleanup\n");
+  process.stdout.write(`${theme.title("AI session cleanup")}\n`);
   process.stdout.write(
-    `Mode: ${options.dryRun ? "safe-run" : "interactive apply"} | Agents: ${
-      options.providerIds?.join(", ") ?? "all"
-    } | Older than days: ${options.olderThanDays ?? "-"} | Orphaned: ${
-      options.includeOrphaned ? "yes" : "no"
-    } | Ignore project: ${
-      options.ignoredProjectTerms.length
-        ? clip(options.ignoredProjectTerms.join(", "), 30)
-        : "-"
-    } | Larger than: ${
-      options.largerThanBytes === null
-        ? "-"
-        : formatBytes(options.largerThanBytes)
-    } | Compact SQLite: ${options.compactSqlite ? "yes" : "no"}\n`,
+    `${[
+      formatSetting(
+        theme,
+        "Mode",
+        options.dryRun ? "safe-run" : "interactive apply",
+      ),
+      formatSetting(theme, "Agents", options.providerIds?.join(", ") ?? "all"),
+      formatSetting(
+        theme,
+        "Older than days",
+        String(options.olderThanDays ?? "-"),
+      ),
+      formatSetting(theme, "Orphaned", options.includeOrphaned ? "yes" : "no"),
+      formatSetting(
+        theme,
+        "Ignore project",
+        options.ignoredProjectTerms.length
+          ? clip(options.ignoredProjectTerms.join(", "), 30)
+          : "-",
+      ),
+      formatSetting(
+        theme,
+        "Larger than",
+        options.largerThanBytes === null
+          ? "-"
+          : formatBytes(options.largerThanBytes),
+      ),
+      formatSetting(
+        theme,
+        "Compact SQLite",
+        options.compactSqlite ? "yes" : "no",
+      ),
+    ].join(theme.dim(" | "))}\n`,
   );
   process.stdout.write(
-    `Matches: ${totalSessions} session(s), ${totalProjects} project item(s), ${formatBytes(totalBytes)}\n\n`,
+    `${theme.strong("Matches:")} ${theme.success(
+      `${totalSessions} session(s), ${totalProjects} project item(s), ${formatBytes(totalBytes)}`,
+    )}\n\n`,
   );
 
   process.stdout.write(
     `${renderTable(
       ["Agent", "Sessions", "Projects", "Bytes"],
-      executions.map((execution) => [
-        execution.result.providerName,
-        String(execution.result.sessions.length),
-        String(execution.result.projects.length),
-        formatBytes(
-          execution.result.sessions.reduce(
-            (sum, session) => sum + session.bytes,
-            0,
-          ) +
-            execution.result.projects.reduce(
-              (sum, project) => sum + project.bytes,
+      executions.map((execution) => ({
+        agentId: execution.result.providerId,
+        cells: [
+          execution.result.providerName,
+          String(execution.result.sessions.length),
+          String(execution.result.projects.length),
+          formatBytes(
+            execution.result.sessions.reduce(
+              (sum, session) => sum + session.bytes,
               0,
-            ),
-        ),
-      ]),
+            ) +
+              execution.result.projects.reduce(
+                (sum, project) => sum + project.bytes,
+                0,
+              ),
+          ),
+        ],
+      })),
+      theme,
     )}\n`,
   );
 
   if (candidateRows.length) {
-    process.stdout.write("\nCandidates:\n");
+    process.stdout.write(`\n${theme.heading("Candidates:")}\n`);
     process.stdout.write(
       `${renderTable(
         [
@@ -289,60 +334,106 @@ function printScanReport(
           "Label",
         ],
         candidateRows,
+        theme,
       )}\n`,
     );
   }
 
   if (messages.warnings.length) {
-    process.stdout.write("\nWarnings:\n");
+    process.stdout.write(`\n${theme.warning("Warnings:")}\n`);
     for (const warning of messages.warnings) {
-      process.stdout.write(`- ${warning}\n`);
+      process.stdout.write(`${theme.warning(`- ${warning}`)}\n`);
     }
   }
 
   if (options.dryRun) {
-    process.stdout.write("\nSafe Run:\n");
+    process.stdout.write(`\n${theme.success("Safe Run:")}\n`);
     process.stdout.write(
-      "- Nothing was deleted. The candidates above are exactly what apply mode would remove.\n",
+      `${theme.success(
+        "- Nothing was deleted. The candidates above are exactly what apply mode would remove.",
+      )}\n`,
     );
   }
 
   if (messages.notes.length) {
-    process.stdout.write("\nNotes:\n");
+    process.stdout.write(`\n${theme.heading("Notes:")}\n`);
     for (const note of messages.notes) {
-      process.stdout.write(`- ${note}\n`);
+      process.stdout.write(`${theme.accent(`- ${note}`)}\n`);
     }
   }
 }
 
-function projectCandidateToRow(project: ProjectCandidate): string[] {
-  return [
-    project.providerName,
-    "project",
-    formatDateTime(project.updatedAt),
-    formatBytes(project.bytes),
-    clip(project.reasons.join(", "), 30),
-    clip(abbreviateHomePath(project.projectPath) ?? "-", 36),
-    "-",
-    clip(project.displayName, 42),
-  ];
+function formatSetting(
+  theme: OutputTheme,
+  label: string,
+  value: string,
+): string {
+  return `${theme.dim(`${label}:`)} ${theme.strong(value)}`;
 }
 
-function renderTable(headers: string[], rows: string[][]): string {
+function projectCandidateToRow(project: ProjectCandidate): TableRow {
+  return {
+    agentId: project.providerId,
+    cells: [
+      project.providerName,
+      "project",
+      formatDateTime(project.updatedAt),
+      formatBytes(project.bytes),
+      clip(project.reasons.join(", "), 30),
+      clip(abbreviateHomePath(project.projectPath) ?? "-", 36),
+      "-",
+      clip(project.displayName, 42),
+    ],
+  };
+}
+
+function renderTable(
+  headers: string[],
+  rows: TableRow[],
+  theme?: OutputTheme,
+): string {
   const widths = headers.map((header, index) =>
-    Math.max(header.length, ...rows.map((row) => (row[index] ?? "").length)),
+    Math.max(
+      header.length,
+      ...rows.map((row) => (row.cells[index] ?? "").length),
+    ),
   );
   const divider = widths.map((width) => "-".repeat(width)).join("-+-");
   const headerLine = headers
     .map((header, index) => header.padEnd(widths[index] ?? header.length))
     .join(" | ");
-  const rowLines = rows.map((row) =>
-    row
-      .map((cell, index) => cell.padEnd(widths[index] ?? cell.length))
-      .join(" | "),
-  );
+  const rowLines = rows.map((row) => formatTableRow(row, widths, theme));
 
-  return [headerLine, divider, ...rowLines].join("\n");
+  return [
+    theme ? theme.strong(headerLine) : headerLine,
+    theme ? theme.dim(divider) : divider,
+    ...rowLines,
+  ].join("\n");
+}
+
+function formatTableCell(
+  row: TableRow,
+  index: number,
+  width: number,
+  theme?: OutputTheme,
+): string {
+  const paddedCell = (row.cells[index] ?? "").padEnd(width);
+
+  if (index !== 0 || !theme || !row.agentId) {
+    return paddedCell;
+  }
+
+  return theme.agent(row.agentId, paddedCell);
+}
+
+function formatTableRow(
+  row: TableRow,
+  widths: number[],
+  theme?: OutputTheme,
+): string {
+  return row.cells
+    .map((_, index) => formatTableCell(row, index, widths[index] ?? 0, theme))
+    .join(" | ");
 }
 
 async function scanProviders(
@@ -377,17 +468,20 @@ function selectProviders(options: CliOptions): AgentProvider[] {
   );
 }
 
-function sessionCandidateToRow(session: SessionCandidate): string[] {
-  return [
-    session.providerName,
-    "session",
-    formatDateTime(session.updatedAt),
-    formatBytes(session.bytes),
-    clip(session.reasons.join(", "), 30),
-    clip(abbreviateHomePath(session.projectPath) ?? "-", 36),
-    session.id,
-    clip(session.title ?? session.id, 42),
-  ];
+function sessionCandidateToRow(session: SessionCandidate): TableRow {
+  return {
+    agentId: session.providerId,
+    cells: [
+      session.providerName,
+      "session",
+      formatDateTime(session.updatedAt),
+      formatBytes(session.bytes),
+      clip(session.reasons.join(", "), 30),
+      clip(abbreviateHomePath(session.projectPath) ?? "-", 36),
+      session.id,
+      clip(session.title ?? session.id, 42),
+    ],
+  };
 }
 
 function summarizeExecution(
@@ -425,6 +519,7 @@ function summarizeOptions(options: CliOptions): Record<string, unknown> {
   return {
     agentIds: options.providerIds,
     compactSqlite: options.compactSqlite,
+    color: options.color,
     dryRun: options.dryRun,
     ignoredProjectTerms: options.ignoredProjectTerms,
     includeOrphaned: options.includeOrphaned,
