@@ -9,6 +9,7 @@ import type {
   ProviderScanResult,
   SessionCandidate,
 } from "../types.js";
+import { compactSqliteFiles, listTables } from "./sqlite.js";
 import {
   excerpt,
   expandHome,
@@ -68,9 +69,7 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
     const shellSnapshotPaths = result.sessions.flatMap(
       (session) => session.internal.shellSnapshotPaths,
     );
-    const notes = [
-      "SQLite rows were deleted from Codex state databases. Physical database files may not shrink until SQLite runs VACUUM.",
-    ];
+    const notes: string[] = [];
     const warnings: string[] = [];
 
     await rewriteJsonLines(HISTORY_PATH, (parsed) => {
@@ -84,30 +83,63 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
     try {
       stateDb.exec("BEGIN");
 
-      const deleteThreadDynamicTools = stateDb.prepare(
+      // Codex's state schema drifts between CLI versions (tables get added,
+      // renamed, or dropped). Only touch tables this database actually has,
+      // so cleanup never crashes with "no such table". `threads` is the row
+      // we must remove; the rest are best-effort related cleanup.
+      const present = listTables(stateDb);
+      const runIfPresent = (
+        table: string,
+        sql: string,
+        args: (sessionId: string) => unknown[],
+      ): ((sessionId: string) => void) => {
+        if (!present.has(table)) {
+          return () => undefined;
+        }
+        const statement = stateDb.prepare(sql);
+        return (sessionId: string) => {
+          statement.run(...args(sessionId));
+        };
+      };
+
+      const deleteThreadDynamicTools = runIfPresent(
+        "thread_dynamic_tools",
         "DELETE FROM thread_dynamic_tools WHERE thread_id = ?",
+        (id) => [id],
       );
-      const deleteStage1Outputs = stateDb.prepare(
+      const deleteStage1Outputs = runIfPresent(
+        "stage1_outputs",
         "DELETE FROM stage1_outputs WHERE thread_id = ?",
+        (id) => [id],
       );
-      const deleteLogs = stateDb.prepare(
+      const deleteLogs = runIfPresent(
+        "logs",
         "DELETE FROM logs WHERE thread_id = ?",
+        (id) => [id],
       );
-      const deleteSpawnEdges = stateDb.prepare(
+      const deleteSpawnEdges = runIfPresent(
+        "thread_spawn_edges",
         "DELETE FROM thread_spawn_edges WHERE parent_thread_id = ? OR child_thread_id = ?",
+        (id) => [id, id],
       );
-      const clearAgentJobAssignments = stateDb.prepare(
+      const clearAgentJobAssignments = runIfPresent(
+        "agent_job_items",
         "UPDATE agent_job_items SET assigned_thread_id = NULL WHERE assigned_thread_id = ?",
+        (id) => [id],
       );
-      const deleteThread = stateDb.prepare("DELETE FROM threads WHERE id = ?");
+      const deleteThread = runIfPresent(
+        "threads",
+        "DELETE FROM threads WHERE id = ?",
+        (id) => [id],
+      );
 
       for (const sessionId of sessionIds) {
-        deleteThreadDynamicTools.run(sessionId);
-        deleteStage1Outputs.run(sessionId);
-        deleteLogs.run(sessionId);
-        deleteSpawnEdges.run(sessionId, sessionId);
-        clearAgentJobAssignments.run(sessionId);
-        deleteThread.run(sessionId);
+        deleteThreadDynamicTools(sessionId);
+        deleteStage1Outputs(sessionId);
+        deleteLogs(sessionId);
+        deleteSpawnEdges(sessionId);
+        clearAgentJobAssignments(sessionId);
+        deleteThread(sessionId);
       }
 
       stateDb.exec("COMMIT");
@@ -124,12 +156,15 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
 
       try {
         logsDb.exec("BEGIN");
-        const deleteLogs = logsDb.prepare(
-          "DELETE FROM logs WHERE thread_id = ?",
-        );
 
-        for (const sessionId of sessionIds) {
-          deleteLogs.run(sessionId);
+        if (listTables(logsDb).has("logs")) {
+          const deleteLogs = logsDb.prepare(
+            "DELETE FROM logs WHERE thread_id = ?",
+          );
+
+          for (const sessionId of sessionIds) {
+            deleteLogs.run(sessionId);
+          }
         }
 
         logsDb.exec("COMMIT");
@@ -144,26 +179,15 @@ export const codexProvider: AgentProvider<CodexSessionInternal> = {
 
     if (options.compactSqlite) {
       const sqlitePaths = [stateDbPath, ...(logsDbPath ? [logsDbPath] : [])];
+      const compacted = await compactSqliteFiles(sqlitePaths, warnings);
 
-      for (const sqlitePath of sqlitePaths) {
-        if (!(await pathExists(sqlitePath))) {
-          continue;
-        }
-
-        try {
-          await vacuumDatabase(sqlitePath);
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : "Unknown error";
-          warnings.push(
-            `SQLite compaction failed for ${sqlitePath}: ${message}`,
-          );
-        }
-      }
-
-      if (!warnings.length) {
+      if (compacted) {
         notes.push("Codex SQLite databases were compacted with VACUUM.");
       }
+    } else {
+      notes.push(
+        "SQLite rows were deleted from Codex state databases. Physical database files may not shrink until VACUUM runs (disabled via --no-compact-sqlite).",
+      );
     }
 
     return {
@@ -399,14 +423,4 @@ function getCutoffDate(options: CliOptions): Date | null {
 async function sumPathSizes(paths: string[]): Promise<number> {
   const sizes = await Promise.all(paths.map((path) => getPathSize(path)));
   return sizes.reduce((sum, size) => sum + size, 0);
-}
-
-async function vacuumDatabase(path: string): Promise<void> {
-  const database = new Database(path, { timeout: 5000 });
-
-  try {
-    database.exec("VACUUM");
-  } finally {
-    database.close();
-  }
 }

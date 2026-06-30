@@ -9,6 +9,7 @@ import type {
   ProviderScanResult,
   SessionCandidate,
 } from "../types.js";
+import { compactSqliteFiles } from "./sqlite.js";
 import {
   excerpt,
   expandHome,
@@ -88,7 +89,7 @@ export const opencodeProvider: AgentProvider<
       OpencodeSessionInternal,
       OpencodeProjectInternal
     >,
-    _options: CliOptions,
+    options: CliOptions,
   ): Promise<ProviderApplyResult> {
     const sessionIds = result.sessions.map((session) => session.id);
     const projectIds = result.projects.map(
@@ -150,22 +151,36 @@ export const opencodeProvider: AgentProvider<
       ),
     );
 
+    const notes: string[] = [];
+    const warnings: string[] = [];
+
+    if (options.compactSqlite) {
+      const compacted = await compactSqliteFiles([OPENCODE_DB_PATH], warnings);
+
+      if (compacted) {
+        notes.push("Opencode SQLite database was compacted with VACUUM.");
+      }
+    } else {
+      notes.push(
+        "Opencode SQLite rows and mapped storage files were deleted directly. Physical database size may not shrink until VACUUM runs (disabled via --no-compact-sqlite).",
+      );
+    }
+
     return {
       deletedBytes:
         result.sessions.reduce((sum, session) => sum + session.bytes, 0) +
         result.projects.reduce((sum, project) => sum + project.bytes, 0),
       deletedProjects: result.projects.length,
       deletedSessions: result.sessions.length,
-      notes: [
-        "Opencode SQLite rows and mapped storage files were deleted directly. Physical database size may not shrink until SQLite runs VACUUM.",
-      ],
+      notes,
       providerId: result.providerId,
       providerName: result.providerName,
-      warnings: [],
+      warnings,
     };
   },
   id: "opencode",
-  name: "Opencode",
+  // beta: data layout not locally verified — based on public docs/source only.
+  name: "Opencode (beta)",
   async scan(
     options: CliOptions,
   ): Promise<ProviderScanResult<

@@ -317,7 +317,7 @@ export function parseAgentIds(
 
 export function parseArgs(argv: string[]): CliOptions {
   const color = !argv.includes("--no-color");
-  let compactSqlite = false;
+  let compactSqlite = true;
   let dryRun = false;
   const ignoredProjectTerms: string[] = [];
   let includeOrphaned = true;
@@ -357,7 +357,13 @@ export function parseArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (arg === "--no-compact-sqlite") {
+      compactSqlite = false;
+      continue;
+    }
+
     if (arg === "--compact-sqlite") {
+      // VACUUM is on by default; kept for back-compat as an explicit opt-in.
       compactSqlite = true;
       continue;
     }
@@ -567,8 +573,8 @@ export function printHelpAndExit(color = true): never {
         "Only match items at or above this measurable size (for example: 1MB)",
       ),
       formatHelpOption(
-        theme.accent("--compact-sqlite").padEnd(30),
-        "Run VACUUM on cleaned Codex SQLite databases after apply",
+        theme.accent("--no-compact-sqlite").padEnd(30),
+        "Skip VACUUM on cleaned SQLite databases (Codex, Opencode, Crush; VACUUM runs by default)",
       ),
       formatHelpOption(
         theme.accent("--safe-run").padEnd(30),

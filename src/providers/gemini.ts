@@ -29,6 +29,7 @@ interface GeminiChatFile {
   projectHash?: string;
   sessionId?: string;
   startTime?: string;
+  summary?: string;
 }
 
 interface GeminiLogEntry {
@@ -150,10 +151,17 @@ export const geminiProvider: AgentProvider<
       await writeJsonFile(logPath, nextEntries);
     }
 
-    await Promise.all(
+    const sweptDirs = await Promise.all(
       Array.from(topLevelDirs, (path) => cleanupGeminiTopLevelDir(path)),
     );
     await rewriteGeminiProjectsFile(deletedConfigProjectPaths);
+
+    const notes: string[] = [];
+    if (sweptDirs.some(Boolean)) {
+      notes.push(
+        "Emptied Gemini project directories were fully removed, including any /chat save checkpoints and logs/ left behind.",
+      );
+    }
 
     return {
       deletedBytes:
@@ -161,7 +169,7 @@ export const geminiProvider: AgentProvider<
         result.projects.reduce((sum, project) => sum + project.bytes, 0),
       deletedProjects: result.projects.length,
       deletedSessions: result.sessions.length,
-      notes: [],
+      notes,
       providerId: result.providerId,
       providerName: result.providerName,
       warnings: [],
@@ -351,25 +359,27 @@ async function buildGeminiProjectContext(): Promise<{
   };
 }
 
-async function cleanupGeminiTopLevelDir(path: string): Promise<void> {
+async function cleanupGeminiTopLevelDir(path: string): Promise<boolean> {
   if (!(await pathExists(path))) {
-    return;
+    return false;
   }
 
-  const remainingEntries = await readdir(path).catch(() => []);
-
-  if (!remainingEntries.length) {
-    await removePath(path);
-    return;
-  }
-
-  const significantEntries = remainingEntries.filter(
-    (entry) => entry !== ".project_root",
+  // Per-session files were already deleted before this runs. Keep the project
+  // dir only while it still holds live chat sessions; once the last chat is
+  // gone, remove everything else Gemini stashed alongside it — checkpoint-*.json
+  // (`/chat save` snapshots), logs/, tool-outputs, stray tool output, and the
+  // .project_root marker. Leaving any of it behind orphans session data.
+  const chatsDir = join(path, "chats");
+  const remainingChats = (await readdir(chatsDir).catch(() => [])).filter(
+    (entry) => entry.startsWith("session-"),
   );
 
-  if (!significantEntries.length) {
-    await removePath(path);
+  if (remainingChats.length) {
+    return false;
   }
+
+  await removePath(path);
+  return true;
 }
 
 function collectReasons(
@@ -412,6 +422,12 @@ function hashProjectRoot(projectRoot: string): string {
 }
 
 function extractGeminiTitle(chat: GeminiChatFile): string | null {
+  // Gemini auto-generates a concise `summary` per chat; prefer it over the
+  // raw first user message when present.
+  if (typeof chat.summary === "string" && chat.summary.trim()) {
+    return excerpt(chat.summary);
+  }
+
   const messages = chat.messages ?? [];
 
   for (const message of messages) {

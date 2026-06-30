@@ -8,6 +8,7 @@ import type {
   ProviderScanResult,
   SessionCandidate,
 } from "../types.js";
+import { compactSqliteFiles } from "./sqlite.js";
 import {
   expandHome,
   getPathSize,
@@ -78,7 +79,7 @@ export const crushProvider: AgentProvider<
 > = {
   async apply(
     result: ProviderScanResult<CrushSessionInternal, CrushProjectInternal>,
-    _options: CliOptions,
+    options: CliOptions,
   ): Promise<ProviderApplyResult> {
     const sessionGroups = new Map<string, Set<string>>();
     const projectPathsToDelete = new Set<string>();
@@ -138,26 +139,41 @@ export const crushProvider: AgentProvider<
       Array.from(removableDataDirs, (path) => removePath(path)),
     );
 
+    const notes = [
+      "Crush session rows were deleted from tracked crush.db files, and orphaned entries were rewritten in ~/.local/share/crush/projects.json.",
+    ];
+    const warnings: string[] = [];
+
+    if (options.compactSqlite) {
+      const databasePaths = Array.from(sessionGroups.keys(), (dataDir) =>
+        join(dataDir, "crush.db"),
+      );
+      const compacted = await compactSqliteFiles(databasePaths, warnings);
+
+      if (compacted && databasePaths.length) {
+        notes.push("Crush crush.db files were compacted with VACUUM.");
+      }
+    } else if (result.sessions.length) {
+      warnings.push(
+        "Reported size for Crush sessions is a logical estimate from SQLite content. crush.db files may not shrink without VACUUM (disabled via --no-compact-sqlite).",
+      );
+    }
+
     return {
       deletedBytes:
         result.sessions.reduce((sum, session) => sum + session.bytes, 0) +
         result.projects.reduce((sum, project) => sum + project.bytes, 0),
       deletedProjects: result.projects.length,
       deletedSessions: result.sessions.length,
-      notes: [
-        "Crush session rows were deleted from tracked crush.db files, and orphaned entries were rewritten in ~/.local/share/crush/projects.json.",
-      ],
+      notes,
       providerId: result.providerId,
       providerName: result.providerName,
-      warnings: result.sessions.length
-        ? [
-            "Reported size for Crush sessions is a logical estimate from SQLite content. crush.db files may not shrink immediately without VACUUM.",
-          ]
-        : [],
+      warnings,
     };
   },
   id: "crush",
-  name: "Crush",
+  // beta: data layout not locally verified — based on public docs/source only.
+  name: "Crush (beta)",
   async scan(
     options: CliOptions,
   ): Promise<ProviderScanResult<
