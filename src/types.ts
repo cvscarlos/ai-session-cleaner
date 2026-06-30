@@ -1,10 +1,5 @@
 export type ProviderId =
-  | "claude-code"
-  | "codex"
-  | "copilot"
-  | "crush"
-  | "gemini"
-  | "opencode";
+  "claude-code" | "codex" | "copilot" | "crush" | "gemini" | "opencode";
 
 export interface CliOptions {
   color: boolean;

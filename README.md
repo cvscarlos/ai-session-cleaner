@@ -9,9 +9,9 @@ Built for:
 - [Claude Code](https://github.com/anthropics/claude-code)
 - [Codex](https://github.com/openai/codex)
 - [GitHub Copilot CLI](https://github.com/github/copilot-cli)
-- [Crush](https://github.com/charmbracelet/crush)
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli)
 - [Opencode](https://github.com/anomalyco/opencode)
+- [Crush](https://github.com/charmbracelet/crush)
 
 Requires Node 18 or newer.
 
@@ -92,14 +92,14 @@ The CLI focuses on cleanup that is both useful and safe to preview:
 
 ## Supported tools
 
-| Tool | Agent id | Coverage |
-| --- | --- | --- |
-| Claude Code | `claude-code` | `~/.claude/projects`, `~/.claude/session-env`, `~/.claude/tasks`, `~/.claude/file-history`, `~/.claude/todos`, `~/.claude/debug`, `~/.claude.json` |
-| Codex | `codex` | `~/.codex/state_*.sqlite`, `~/.codex/logs_*.sqlite`, `~/.codex/history.jsonl`, `~/.codex/shell_snapshots` |
-| GitHub Copilot CLI | `copilot` | `~/.copilot/session-state`, `~/.copilot/logs/session-*`, platform-specific VS Code globalStorage metadata |
-| Crush | `crush` | `~/.local/share/crush/projects.json`, tracked project-local `.crush/crush.db` files, and tracked external Crush data dirs |
-| Gemini CLI | `gemini` | `~/.gemini/tmp`, `~/.gemini/history`, `~/.gemini/projects.json` |
-| Opencode | `opencode` | `~/.local/share/opencode/opencode.db`, `~/.local/share/opencode/storage`, `~/.local/share/opencode/snapshot` |
+| Tool               | Agent id      | Coverage                                                                                                                                           |
+| ------------------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code        | `claude-code` | `~/.claude/projects`, `~/.claude/session-env`, `~/.claude/tasks`, `~/.claude/file-history`, `~/.claude/todos`, `~/.claude/debug`, `~/.claude.json` |
+| Codex              | `codex`       | `~/.codex/state_*.sqlite`, `~/.codex/logs_*.sqlite`, `~/.codex/history.jsonl`, `~/.codex/shell_snapshots`                                          |
+| GitHub Copilot CLI | `copilot`     | `~/.copilot/session-state`, `~/.copilot/logs/session-*`, platform-specific VS Code globalStorage metadata                                          |
+| Crush              | `crush`       | `~/.local/share/crush/projects.json`, tracked project-local `.crush/crush.db` files, and tracked external Crush data dirs                          |
+| Gemini CLI         | `gemini`      | `~/.gemini/tmp`, `~/.gemini/history`, `~/.gemini/projects.json`                                                                                    |
+| Opencode           | `opencode`    | `~/.local/share/opencode/opencode.db`, `~/.local/share/opencode/storage`, `~/.local/share/opencode/snapshot`                                       |
 
 ## Behavior
 

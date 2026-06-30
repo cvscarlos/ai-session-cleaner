@@ -4,9 +4,15 @@ set -eu
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-if git diff --cached --quiet --exit-code; then
-  exit 0
-fi
+staged=$(git diff --cached --name-only --diff-filter=ACM)
 
-npm exec -- biome check --write --staged
+# prettier formats everything it understands; eslint only lints code files.
+fmt=$(echo "$staged" | grep -E '\.(ts|js|mjs|cjs|json|md)$' || true)
+[ -z "$fmt" ] && exit 0
+echo "$fmt" | xargs npx prettier --write
+
+lint=$(echo "$staged" | grep -E '\.(ts|js|mjs|cjs)$' || true)
+[ -n "$lint" ] && echo "$lint" | xargs npx eslint --fix
+
+echo "$fmt" | xargs git add
 git update-index --again

@@ -1,6 +1,9 @@
+# Folders
+.fallow/
 dist/
 node_modules/
 tmp/
 
-.DS_Store
+# Files
 *.tsbuildinfo
+.DS_Store
