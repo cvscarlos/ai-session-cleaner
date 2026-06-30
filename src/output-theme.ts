@@ -20,6 +20,7 @@ export function createOutputTheme(color: boolean): OutputTheme {
     "claude-code": chalk.magenta,
     codex: chalk.cyan,
     copilot: chalk.blue,
+    "copilot-vscode": chalk.blueBright,
     crush: chalk.red,
     gemini: chalk.yellow,
     opencode: chalk.green,

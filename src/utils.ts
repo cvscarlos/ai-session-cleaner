@@ -19,6 +19,7 @@ const AGENT_IDS: ProviderId[] = [
   "claude-code",
   "codex",
   "copilot",
+  "copilot-vscode",
   "crush",
   "gemini",
   "opencode",
@@ -65,6 +66,12 @@ export function getVsCodeGlobalStorageDirectory(
     "globalStorage",
     extensionId,
   );
+}
+
+export function getVsCodeWorkspaceStorageDirectory(
+  productName = "Code",
+): string {
+  return join(getAppDataDirectory(), productName, "User", "workspaceStorage");
 }
 
 export function abbreviateHomePath(
